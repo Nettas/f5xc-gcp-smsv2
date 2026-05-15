@@ -1,0 +1,52 @@
+# ==============================================================================
+# terraform.tfvars - Fill in your values before applying
+# DO NOT commit this file to source control (contains sensitive values)
+# Add terraform.tfvars to your .gitignore
+# ==============================================================================
+
+# --- F5XC API ---
+f5xc_api_url      = "https://YOUR-TENANT.console.ves.volterra.io/api"
+f5xc_api_p12_file = "/path/to/your/api-credential.p12"
+
+# --- GCP ---
+gcp_project_id = "your-gcp-project-id"
+gcp_region     = "us-central1"
+gcp_az_site1   = "us-central1-a"
+gcp_az_site2   = "us-central1-b"
+
+# Minimum for production: n2-standard-8 (8 vCPU / 32GB RAM)
+# Dev/test only:          n1-standard-4  (4 vCPU / 15GB RAM)
+gcp_instance_type = "n2-standard-8"
+gcp_disk_size_gb  = 80
+
+# --- VPC & Subnets ---
+vpc_name = "f5xc-ce-vpc"
+
+site1_outside_subnet_cidr = "10.100.1.0/24"
+site1_inside_subnet_cidr  = "10.100.2.0/24"
+
+site2_outside_subnet_cidr = "10.100.11.0/24"
+site2_inside_subnet_cidr  = "10.100.12.0/24"
+
+# --- F5XC Site Names ---
+f5xc_namespace       = "system"
+site1_name           = "gcp-ce-site1-az-a"
+site2_name           = "gcp-ce-site2-az-b"
+gcp_credentials_name = "gcp-cloud-cred"
+
+# --- SSH Key (optional but recommended) ---
+ssh_public_key = "ssh-rsa AAAAB3... user@host"
+
+# --- Labels ---
+site_labels = {
+  environment = "production"
+  managed-by  = "terraform"
+  team        = "networking"
+}
+
+# --- Cloud NAT ---
+# Set to true if CE nodes do NOT have public IPs (recommended)
+create_cloud_nat = true
+
+# NOTE: The GCP service account key is passed via environment variable:
+# export TF_VAR_gcp_service_account_key_b64=$(base64 -w0 /path/to/sa-key.json)

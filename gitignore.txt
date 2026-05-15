@@ -1,0 +1,60 @@
+# ==============================================================================
+# Terraform .gitignore
+# ==============================================================================
+
+# Local .terraform directory (provider plugins, modules cache)
+.terraform/
+.terraform.lock.hcl
+
+# Terraform state files — NEVER commit state (may contain secrets)
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+
+# Terraform plan output files
+*.tfplan
+*.plan
+
+# Crash log files
+crash.log
+crash.*.log
+
+# Sensitive variable files — copy terraform.tfvars.example instead
+terraform.tfvars
+*.auto.tfvars
+*.auto.tfvars.json
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Local .env files
+.env
+.env.*
+
+# GCP service account key files
+*.json
+sa-key*
+service-account*
+
+# F5XC API credential files
+*.p12
+*.pem
+*.key
+*.crt
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Editor/IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Session context doc (internal use only)
+f5xc-gcp-smsv2-session-context.md
+volterra_terraform
