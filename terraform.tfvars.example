@@ -2,11 +2,15 @@
 # terraform.tfvars - Fill in your values before applying
 # DO NOT commit this file to source control (contains sensitive values)
 # Add terraform.tfvars to your .gitignore
+#
+# NOTE: If you are using environment variables (TF_VAR_*) instead of a
+# tfvars file, you do not need this file at all — see README.md.
 # ==============================================================================
 
 # --- F5XC API ---
 f5xc_api_url      = "https://YOUR-TENANT.console.ves.volterra.io/api"
 f5xc_api_p12_file = "/path/to/your/api-credential.p12"
+f5xc_tenant       = "YOUR-TENANT"
 
 # --- GCP ---
 gcp_project_id = "your-gcp-project-id"
@@ -47,6 +51,9 @@ site_labels = {
 # --- Cloud NAT ---
 # Set to true if CE nodes do NOT have public IPs (recommended)
 create_cloud_nat = true
+
+# --- Test traffic validation ---
+create_test_vms = false
 
 # NOTE: The GCP service account key is passed via environment variable:
 # export TF_VAR_gcp_service_account_key_b64=$(base64 -w0 /path/to/sa-key.json)

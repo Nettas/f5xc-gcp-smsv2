@@ -58,3 +58,9 @@ service-account*
 # Session context doc (internal use only)
 f5xc-gcp-smsv2-session-context.md
 volterra_terraform
+
+# Bare plan-output filename (terraform plan -out=tfplan)
+tfplan
+
+# Local helper script holding exported TF_VAR_*/VOLT_* credentials
+.f5xc-env.sh
