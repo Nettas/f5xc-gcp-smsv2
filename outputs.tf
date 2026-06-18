@@ -165,7 +165,7 @@ output "snat_pool_prefix" {
 # ---- Traffic path summary ----
 output "traffic_path" {
   description = "End-to-end traffic flow summary"
-  value = <<-EOT
+  value       = <<-EOT
     Client (${var.client_subnet_cidr})
       → VPC Peer
         → NLB VIP: ${google_compute_forwarding_rule.ce_sli_nlb.ip_address} (all ports)

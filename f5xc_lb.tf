@@ -201,12 +201,12 @@ resource "volterra_http_loadbalancer" "app_lb" {
   disable_rate_limit = true
 
   # -- No bot defense --
-  bot_defense_regional {
-    regional_endpoint = "US"
-    policy {
-      disable_bot_defense = true
-    }
-  }
+  #bot_defense_regional {
+  #  regional_endpoint = "US"
+  #  policy {
+  #    disable_bot_defense = true
+  #  }
+  #}
 
   # -- Connection/timeout settings --
   add_location                    = false

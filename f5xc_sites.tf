@@ -55,7 +55,7 @@ resource "volterra_securemesh_site_v2" "site1" {
   # ---- GCP not_managed (customer-managed infra) ----
   # Use `not_managed` because we provision the GCP VM ourselves via
   # google_compute_instance. Use `managed` only for F5XC-orchestrated infra.
-gcp {
+  gcp {
     not_managed {
       node_list {
         hostname = "${var.site1_name}-node0"
