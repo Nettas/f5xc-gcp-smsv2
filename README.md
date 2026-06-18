@@ -24,23 +24,23 @@ GCP Internal Pass-Through NLB (VIP: 10.100.2.x, all TCP/UDP ports)
   │  [forwards to CE SLI backends]
   ▼
 CE Site 1 / CE Site 2 (SLI eth1)
-  │  [F5XC HTTP LB advertised on SLI, VIP: 10.100.2.100]
+  │  [F5XC load balancer and origin pool configured manually via F5XC Console]
   ▼
-Origin Pool (LOCALPREFERED, ROUND_ROBIN)
-  │  [SNAT source → 10.201.1.200/32]
-  │  [VPC Peer]
-  ▼
-App Server (app VPC: 10.201.1.0/24, IP: 10.201.1.10, port: 80)
+App Server (app VPC: 10.201.1.0/24)
 ```
 
 Each CE node registers as an independent F5XC `securemesh_site_v2` with:
-- **`multiple_interface`** mode (Ingress/Egress Gateway)
 - **`not_managed`** GCP — you manage the GCP VM; F5XC manages the software overlay
+- **2-NIC** — eth0=SLO (outside/internet), eth1=SLI (inside/workload)
 - **Cloud NAT** on SLO subnets for internet egress (no public IPs on VMs)
 
 This is a single flat Terraform module — one state file, applied with one
-`terraform apply`. All resources (VPCs, CE sites, NLB, F5XC LB) are declared
-together and reference each other directly (no remote state required).
+`terraform apply`. All GCP and F5XC site resources are declared together and
+reference each other directly (no remote state required).
+
+F5XC application delivery objects (HTTP/TCP load balancers, origin pools,
+health checks) are configured manually via the F5XC Console after the CE
+infrastructure is deployed and both sites show `Online`.
 
 ---
 
@@ -52,17 +52,45 @@ together and reference each other directly (no remote state required).
 | F5XC Tenant account | With CE deployment permissions |
 | F5XC API P12 credential | Download from F5XC Console → Administration → Credentials |
 | GCP project | With Compute Engine API enabled |
-| GCP Service Account | Roles: `Compute Admin`, `Service Account User` |
-| GCP image access | `f5-7626-networks-public/f5xc-customer-edge` — accept Marketplace terms |
+| GCP Service Account | See IAM section below for required permissions |
+| GCP image access | `f5-7626-networks-public/f5xc-ce-crt-20251001-byol` — accept Marketplace terms |
 | GCP quota | At least 16 vCPUs free in target region for two `n2-standard-8` CE nodes |
 
 ### Accept GCP Marketplace Terms
+
+Before applying, verify Marketplace terms are accepted in your deployment project:
+
 ```bash
-gcloud compute images list --project f5-7626-networks-public --no-standard-images
-# Accept terms if required:
-gcloud compute images describe f5xc-customer-edge \
-  --project=f5-7626-networks-public
+# Probe terms acceptance — creates and immediately deletes a tiny VM using the CE image
+gcloud compute instances create license-check-tmp \
+  --project=<your-gcp-project-id> \
+  --zone=us-central1-a \
+  --machine-type=e2-micro \
+  --image=f5xc-ce-crt-20251001-byol \
+  --image-project=f5-7626-networks-public \
+  --no-address
+
+# If it succeeds, delete it immediately
+gcloud compute instances delete license-check-tmp \
+  --zone=us-central1-a \
+  --project=<your-gcp-project-id>
 ```
+
+If the create fails with a terms/licensing error, accept the terms via the
+GCP Marketplace listing before proceeding.
+
+### GCP IAM — Required Permissions
+
+The service account used by Terraform needs the following permissions (beyond
+basic Compute Engine access) that are not always included in standard roles:
+
+- `compute.networks.addPeering` / `removePeering` / `updatePeering`
+- `compute.addresses.createInternal` / `deleteInternal`
+- `compute.routers.create` / `delete` / `update`
+- `compute.instanceGroups.update` / `delete`
+
+If using a custom IAM role, add these explicitly. `roles/compute.admin` covers
+all of them if you prefer a predefined role.
 
 ---
 
@@ -72,15 +100,14 @@ gcloud compute images describe f5xc-customer-edge \
 |---|---|
 | `providers.tf` | volterra + google provider config; credentials via env vars |
 | `variables.tf` | Core variables: GCP project/region/AZs, VPC CIDRs, site names, instance type |
-| `variables_extended.tf` | Extended variables: client VPC, app VPC, VIP, SNAT prefix, F5XC tenant, domain |
+| `variables_extended.tf` | Extended variables: client VPC, app VPC, app server config |
 | `networking.tf` | Shared CE VPC, 4 subnets (SLO+SLI per site), Cloud NAT, firewall rules |
 | `f5xc_sites.tf` | GCP cloud credentials, 2x `volterra_securemesh_site_v2`, 2x `volterra_token` |
-| `compute.tf` | 2x GCP VMs (2-NIC each), cloud-init injects site token + cluster name |
-| `nlb.tf` | GCP internal pass-through NLB: health check, instance groups, backend service, forwarding rule |
+| `compute.tf` | 2x GCP VMs (2-NIC each), cloud-init injects site token via `/etc/vpm/user_data` |
+| `nlb.tf` | GCP internal pass-through NLB: health check (TCP 65500), instance groups, backend service, forwarding rule |
 | `client_app_vpcs.tf` | Client VPC + App VPC + subnets + firewall rules + VPC peering (CE↔Client, CE↔App) |
-| `f5xc_lb.tf` | `volterra_healthcheck`, `volterra_origin_pool`, `volterra_http_loadbalancer`, GCP static VIP reservation |
 | `test_vms.tf` | Optional test VMs (`create_test_vms = true`): Debian client VM + nginx app VM |
-| `outputs.tf` | All useful outputs including NLB VIP, site IPs, tokens (sensitive), traffic path summary |
+| `outputs.tf` | Useful outputs: NLB VIP, site IPs, registration tokens (sensitive) |
 | `terraform.tfvars.example` | Template tfvars — copy to `terraform.tfvars` before applying (optional if using env vars) |
 
 ---
@@ -89,95 +116,145 @@ gcloud compute images describe f5xc-customer-edge \
 
 ### 1. Set environment variables
 
-This config can be driven entirely by environment variables instead of a
-`terraform.tfvars` file. Required `TF_VAR_*` names match the variable names
-in `variables.tf` / `variables_extended.tf` exactly.
+Source `.f5xc-env.sh` before every Terraform session — environment variables
+do not persist across shell sessions:
 
 ```bash
-# F5XC provider auth
-export VOLT_API_URL="https://YOUR-TENANT.console.ves.volterra.io/api"
-export VOLT_API_P12_FILE="/path/to/api-credential.p12"
-export VES_P12_PASSWORD="your-p12-password"
-
-# Required Terraform variables (no defaults set in variables.tf)
-export TF_VAR_f5xc_api_url="$VOLT_API_URL"
-export TF_VAR_f5xc_api_p12_file="$VOLT_API_P12_FILE"
-export TF_VAR_f5xc_tenant="YOUR-TENANT"          # subdomain only, e.g. "mycompany"
-export TF_VAR_gcp_project_id="your-gcp-project-id"
-
-# GCP provider auth (separate from the F5XC cloud-credentials object)
-export GOOGLE_APPLICATION_CREDENTIALS="/path/to/sa-key.json"
-export TF_VAR_gcp_service_account_key_b64=$(base64 -w0 /path/to/sa-key.json)
-
-# Optional: turn on test VMs for end-to-end traffic validation
-export TF_VAR_create_test_vms=true
+source .f5xc-env.sh
 ```
 
-Everything else has sane defaults (region, AZs, CIDRs, instance type, site
-names) in `variables.tf` / `variables_extended.tf`. Override any of them with
-additional `TF_VAR_<name>` exports, or use `terraform.tfvars` instead if you
-prefer a file-based approach — copy `terraform.tfvars.example` to
-`terraform.tfvars` and fill it in (then make sure it's gitignored).
+The file sets the following (fill in your values):
 
-### 2. Initialize and plan
+```bash
+#!/usr/bin/env bash
+# .f5xc-env.sh — gitignored, never commit this file
+
+# F5XC provider auth
+export VOLT_API_URL="https://YOUR-TENANT.console.ves.volterra.io/api"
+export VOLT_API_P12_FILE="$HOME/path/to/api-credential.p12"
+export VES_P12_PASSWORD="your-p12-password"
+
+# Required Terraform variables
+export TF_VAR_f5xc_api_url="$VOLT_API_URL"
+export TF_VAR_f5xc_api_p12_file="$VOLT_API_P12_FILE"
+export TF_VAR_gcp_project_id="your-gcp-project-id"
+
+# GCP provider auth
+export GOOGLE_APPLICATION_CREDENTIALS="$HOME/path/to/sa-key.json"
+export TF_VAR_gcp_service_account_key_b64=$(base64 -w0 "$HOME/path/to/sa-key.json")
+
+# Optional: provision test VMs for traffic validation
+# export TF_VAR_create_test_vms=true
+```
+
+Verify everything is set before running Terraform:
+
+```bash
+env | grep -E '^(TF_VAR_|VOLT_|VES_|GOOGLE_)' | sort
+```
+
+### 2. Set SSH public key
+
+The SSH public key for CE node access is set in `terraform.tfvars` (gitignored):
+
+```hcl
+ssh_public_key = "ssh-ed25519 AAAA... your-key"
+```
+
+Connect to CE nodes post-deployment using:
+
+```bash
+ssh -i ~/.ssh/your-private-key admin@<ce-slo-or-sli-ip>
+```
+
+### 3. Initialize and plan
 
 ```bash
 terraform init
 terraform plan -out=tfplan
 ```
 
-### 3. Apply
+### 4. Apply
 
 ```bash
-terraform apply tfplan
+terraform apply "tfplan"
 ```
 
-### 4. Verify CE registration
-After `apply` completes, the CE VMs will boot and self-register (~5-10 mins):
+### 5. Verify CE registration
+
+After `apply` completes, CE VMs boot and self-register (~5–10 mins):
 
 1. Log into F5XC Console
 2. Navigate to **Multi-Cloud Network Connect → Overview → Sites**
-3. Both sites should transition: `Waiting for Registration` → `Online`
+3. Both sites transition: `Waiting for Registration` → `Provisioning` → `Online`
 
----
-
-## Post-Deployment: Accept Registration (if required)
-
-For `not_managed` sites, you may need to manually approve the node registration:
-
-1. Console → **Manage → Site Management → Registrations**
-2. Accept the pending registration for each node
-3. Set **Cluster Name** to match your `site1_name` / `site2_name` variables
-
----
-
-## Testing End-to-End Application Traffic
-
-Set `TF_VAR_create_test_vms=true` before applying to provision a Debian
-client VM (in the client VPC) and an nginx app VM (in the app VPC, bound to
-`app_server_ip`).
-
-Once both CE sites show `Online` and `terraform apply` has finished:
+If either site stalls at `Waiting for Registration`, check:
 
 ```bash
-# Grab the NLB VIP and app domain from outputs
-terraform output nlb_vip
-terraform output -raw f5xc_vip_address
-
-# SSH into the client test VM via IAP
-gcloud compute ssh client-test-vm --zone=<client_subnet_az> --tunnel-through-iap
-
-# From inside the client VM, hit the app through the full path:
-#   client → NLB VIP → CE SLI → F5XC HTTP LB → origin pool → app VM
-curl -v -H "Host: app.internal.example.com" http://<nlb_vip>/
-curl -v -H "Host: app.internal.example.com" http://<nlb_vip>/health
+# Verify the token was written correctly on the CE node
+ssh -i ~/.ssh/your-key admin@<ce-slo-ip>
+cat /etc/vpm/user_data
 ```
 
-A successful response means traffic crossed: client VPC → VPC peering → GCP
-NLB → CE SLI → F5XC HTTP LB → origin pool (SNAT'd) → app VPC → nginx. If it
-fails, check in this order: CE site status in the F5XC console, NLB backend
-health (`gcloud compute backend-services get-health`), and the F5XC HTTP LB
-status/origin pool health in the console.
+The file should contain only:
+```
+token: <token-value>
+```
+
+---
+
+## Post-Deployment: Configure F5XC Application Delivery
+
+F5XC load balancers, origin pools, and health checks are configured manually
+via the F5XC Console after both CE sites show `Online`. Terraform manages the
+CE site infrastructure only.
+
+Typical post-deployment configuration in the console:
+
+1. **Health Check** — Multi-Cloud App Connect → Manage → Health Checks
+2. **Origin Pool** — Multi-Cloud App Connect → Manage → Origin Pools
+   - Use `private_ip` origin type with `inside_network = true`
+   - Locate origin on CE site(s) via site locator
+3. **HTTP or TCP Load Balancer** — Multi-Cloud App Connect → Manage → Load Balancers
+   - Advertise on `SITE_LOCAL_INSIDE` of both CE sites
+   - Target the origin pool created above
+
+The NLB VIP is the entry point for client traffic:
+
+```bash
+terraform output nlb_vip
+```
+
+Clients in the client VPC send traffic to this VIP → NLB → CE SLI → F5XC LB.
+
+---
+
+## Testing with Optional Test VMs
+
+Set `TF_VAR_create_test_vms=true` (or add `create_test_vms = true` to
+`terraform.tfvars`) to provision a Debian client VM and an nginx app VM for
+end-to-end validation.
+
+```bash
+# SSH into the client VM via IAP
+gcloud compute ssh client-test-vm \
+  --zone=us-central1-a \
+  --tunnel-through-iap \
+  --project=<your-gcp-project-id>
+
+# From inside the client VM, hit the NLB VIP
+curl -v http://<nlb_vip>/
+```
+
+The app VM runs nginx and has a `/health` endpoint at `http://<app-vm-ip>/health`.
+SSH into it via IAP:
+
+```bash
+gcloud compute ssh app-test-vm \
+  --zone=us-central1-a \
+  --tunnel-through-iap \
+  --project=<your-gcp-project-id>
+```
 
 ---
 
@@ -189,19 +266,32 @@ status/origin pool health in the console.
 
 This config uses `not_managed` for maximum flexibility.
 
-### 2-NIC (`multiple_interface`) vs 1-NIC (`single_interface`)
-- **2-NIC**: eth0=SLO (outside/internet), eth1=SLI (inside/workload). Required for Ingress/Egress Gateway use cases.
-- **1-NIC**: eth0=SLO only. Ingress gateway only. **GCP does not allow adding NICs after VM creation** — choose 2-NIC from the start.
+### 2-NIC layout
+eth0=SLO (outside/internet), eth1=SLI (inside/workload). Required for
+Ingress/Egress Gateway use cases. GCP does not allow adding NICs after VM
+creation — choose 2-NIC from the start.
 
 ### Cloud NAT
-Cloud NAT provides internet egress on the SLO subnet without public IPs on CE nodes. This is the recommended GCP pattern for production deployments.
+Cloud NAT provides internet egress on the SLO subnet without public IPs on CE
+nodes. This is the recommended GCP pattern for production deployments.
 
-### Flat module vs split root modules
-This repo intentionally stays a single root module with one state file.
-Resources reference each other directly (e.g. `volterra_securemesh_site_v2.site1.name`
-in `f5xc_lb.tf`), which is simpler to reason about and apply than splitting into
-separate VPC modules wired together with `terraform_remote_state`. Revisit this
-only if separate teams need to own the client VPC, app VPC, and CE VPC independently.
+### CE registration token delivery
+Registration tokens are generated by the `volterra_token` Terraform resource
+(one per site, bound to the site object via `site_name`) and injected into each
+CE VM via cloud-init, writing to `/etc/vpm/user_data` with the format:
+
+```yaml
+token: <token-value>
+```
+
+This is the current F5XC-documented format for `not_managed` SMSv2 deployments.
+The older `/etc/vpm/config.yaml` format with `ClusterName`, `MauriceEndpoint`,
+etc. is not used.
+
+### Flat module
+Single root module, one state file. Resources reference each other directly —
+no `terraform_remote_state` required. Revisit only if separate teams need to
+own the client VPC, app VPC, and CE VPC independently.
 
 ---
 
@@ -216,8 +306,6 @@ only if separate teams need to own the client VPC, app VPC, and CE VPC independe
 | Site 2 SLI (eth1) | 10.100.12.0/24 | AZ-b inside/workload |
 | Client VPC | 10.200.1.0/24 | Client workloads |
 | App VPC | 10.201.1.0/24 | Backend app servers |
-| CE VIP | 10.100.2.100/32 | F5XC LB VIP on SLI |
-| SNAT pool | 10.201.1.200/32 | CE SNAT source toward app |
 
 ---
 
@@ -230,7 +318,8 @@ only if separate teams need to own the client VPC, app VPC, and CE VPC independe
 | 53 | TCP/UDP | Egress | DNS |
 | 6080 | UDP | Intra-node | CE cluster communication |
 | ICMP | — | Intra-node | Health checks |
-| 22 | TCP | Ingress | SSH management (restrict!) |
+| 65500 | TCP | Ingress | NLB health check probe on CE SLI |
+| 22 | TCP | Ingress | SSH management (restrict to management CIDRs in production) |
 
 ---
 
@@ -240,26 +329,25 @@ only if separate teams need to own the client VPC, app VPC, and CE VPC independe
 terraform destroy
 ```
 
-Note: Destroying the F5XC site objects in the console (`volterra_securemesh_site_v2`) will
-also destroy the GCP VMs. If you want to preserve the GCP resources, remove the
-`volterra_securemesh_site_v2` resources from state first:
+If you want to preserve GCP resources but remove the F5XC site objects:
 
 ```bash
 terraform state rm volterra_securemesh_site_v2.site1
 terraform state rm volterra_securemesh_site_v2.site2
+terraform destroy
 ```
 
 ---
 
 ## Production Hardening TODOs
 
-- [ ] Add `volterra_app_firewall` resource and attach to `volterra_http_loadbalancer` for WAF
-- [ ] Switch HTTP LB to HTTPS (`https {}` block + TLS cert via `volterra_certificate`)
-- [ ] Enable TLS between CE and app origin (`use_tls {}` in origin pool)
+- [ ] Pin the volterra provider version in `providers.tf` (currently `>= 0.11.30`) to prevent schema drift on `terraform init -upgrade`
 - [ ] Restrict SSH firewall rules to specific management CIDRs (currently `10.0.0.0/8`)
-- [ ] Add `volterra_service_policy` to restrict which clients can reach the LB
 - [ ] Consider 3-node HA per site (`enable_ha = true`) for production workloads
 - [ ] Add GCP Cloud Armor policy on NLB for DDoS protection
-- [ ] Store state in GCS backend (`terraform { backend "gcs" {} }`)
-- [ ] Pin the F5XC CE image version instead of using the `family` data source
+- [ ] Store Terraform state in GCS backend (`terraform { backend "gcs" {} }`)
+- [ ] Add `volterra_service_policy` in F5XC Console to restrict which clients can reach the LB
+- [ ] Add `volterra_app_firewall` (WAF) and attach to load balancer in F5XC Console
+- [ ] Enable HTTPS on load balancer (TLS cert via `volterra_certificate`) in F5XC Console
+- [ ] Enable TLS between CE and app origin in F5XC Console origin pool config
 - [ ] Add `volterra_virtual_site` spanning both CE sites for unified origin pool reference
