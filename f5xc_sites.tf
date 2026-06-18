@@ -58,7 +58,7 @@ resource "volterra_securemesh_site_v2" "site1" {
   gcp {
     not_managed {
       node_list {
-        type  = "Control"
+        type     = "Control"
         hostname = "${var.site1_name}-node0"
 
         # Interface 0 - SLO (Site Local Outside) - eth0
@@ -123,7 +123,7 @@ resource "volterra_securemesh_site_v2" "site2" {
   gcp {
     not_managed {
       node_list {
-        type = "Control"
+        type     = "Control"
         hostname = "${var.site2_name}-node0"
 
         # Interface 0 - SLO (Site Local Outside) - eth0
