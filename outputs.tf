@@ -142,6 +142,7 @@ output "app_server_ip" {
 }
 
 # ---- F5XC LB / VIP ----
+/*
 output "f5xc_vip_address" {
   description = "F5XC CE VIP address advertised on CE SLI (clients target NLB which forwards here)"
   value       = google_compute_address.vip.address
@@ -156,6 +157,7 @@ output "f5xc_origin_pool_name" {
   description = "F5XC origin pool name"
   value       = volterra_origin_pool.app_pool.name
 }
+*/
 
 output "snat_pool_prefix" {
   description = "SNAT prefix CE uses when forwarding to app servers"

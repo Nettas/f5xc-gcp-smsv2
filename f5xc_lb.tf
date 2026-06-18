@@ -1,3 +1,4 @@
+/*
 # ==============================================================================
 # F5 Distributed Cloud - Application Delivery
 #
@@ -239,3 +240,4 @@ resource "google_compute_address" "vip" {
   address      = var.vip_address
   description  = "Reserved VIP for F5XC CE application LB on SLI"
 }
+*/
