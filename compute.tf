@@ -27,61 +27,21 @@ locals {
   ce_userdata_site1 = <<-USERDATA
     #cloud-config
     write_files:
-      - path: /etc/hosts
-        content: |
-          127.0.0.1 localhost
-          ::1       localhost
-          127.0.1.1 vip
-          169.254.169.254 metadata.google.internal
-        permissions: '0644'
-        owner: root
-
-      - path: /etc/vpm/config.yaml
+      - path: /etc/vpm/user_data
         permissions: '0644'
         owner: root
         content: |
-          Vpm:
-            ClusterType: ce
-            ClusterName: ${var.site1_name}
-            Token: ${volterra_token.site1_token.id}
-            MauriceEndpoint: https://register.ves.volterra.io
-            MauricePrivateEndpoint: https://register-tls.ves.volterra.io
-            CertifiedHardwareEndpoint: https://vesio.blob.core.windows.net/releases/certified-hardware/gcp.yml
-            Kubernetes:
-              EtcdUseTLS: True
-            Server:
-              vip
-            CloudProvider: disabled
+          token: ${volterra_token.site1_token.id}
   USERDATA
 
   ce_userdata_site2 = <<-USERDATA
     #cloud-config
     write_files:
-      - path: /etc/hosts
-        content: |
-          127.0.0.1 localhost
-          ::1       localhost
-          127.0.1.1 vip
-          169.254.169.254 metadata.google.internal
-        permissions: '0644'
-        owner: root
-
-      - path: /etc/vpm/config.yaml
+      - path: /etc/vpm/user_data
         permissions: '0644'
         owner: root
         content: |
-          Vpm:
-            ClusterType: ce
-            ClusterName: ${var.site2_name}
-            Token: ${volterra_token.site2_token.id}
-            MauriceEndpoint: https://register.ves.volterra.io
-            MauricePrivateEndpoint: https://register-tls.ves.volterra.io
-            CertifiedHardwareEndpoint: https://vesio.blob.core.windows.net/releases/certified-hardware/gcp.yml
-            Kubernetes:
-              EtcdUseTLS: True
-            Server:
-              vip
-            CloudProvider: disabled
+          token: ${volterra_token.site2_token.id}
   USERDATA
 }
 
@@ -123,11 +83,12 @@ resource "google_compute_instance" "ce_site1" {
     subnetwork = google_compute_subnetwork.site1_inside.self_link
   }
 
-  metadata = {
-    user-data          = local.ce_userdata_site1
-    ssh-keys           = var.ssh_public_key != "" ? "admin:${var.ssh_public_key}" : null
-    serial-port-enable = "true" # useful for initial bootstrap debugging
-  }
+metadata = {
+  user-data          = local.ce_userdata_site1
+  VmDnsSetting       = "ZonePreferred"
+  ssh-keys           = var.ssh_public_key != "" ? "admin:${var.ssh_public_key}" : null
+  serial-port-enable = "true"
+}
 
   # Allow instance to call GCP APIs (metadata, etc.)
   service_account {
@@ -187,11 +148,12 @@ resource "google_compute_instance" "ce_site2" {
     subnetwork = google_compute_subnetwork.site2_inside.self_link
   }
 
-  metadata = {
-    user-data          = local.ce_userdata_site2
-    ssh-keys           = var.ssh_public_key != "" ? "admin:${var.ssh_public_key}" : null
-    serial-port-enable = "true"
-  }
+metadata = {
+  user-data          = local.ce_userdata_site2
+  VmDnsSetting       = "ZonePreferred"
+  ssh-keys           = var.ssh_public_key != "" ? "admin:${var.ssh_public_key}" : null
+  serial-port-enable = "true"
+}
 
   service_account {
     scopes = ["cloud-platform"]
