@@ -154,9 +154,3 @@ variable "create_cloud_nat" {
   type        = bool
   default     = true
 }
-
-variable "ssh_public_key" {
-  description = "SSH public key for CE node access"
-  type        = string
-  default     = ""
-}
