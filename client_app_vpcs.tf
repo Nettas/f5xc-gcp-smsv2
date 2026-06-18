@@ -97,11 +97,11 @@ resource "google_compute_subnetwork" "app_subnet" {
 
 # Allow ingress to app servers ONLY from CE SNAT pool
 # This enforces that all app traffic flows through the CE (no bypass)
-resource "google_compute_firewall" "app_from_ce_snat" {
-  name        = "${var.app_vpc_name}-from-ce-snat"
+resource "google_compute_firewall" "app_from_ce_sli" {
+  name        = "${var.app_vpc_name}-from-ce-sli"
   network     = google_compute_network.app_vpc.id
   direction   = "INGRESS"
-  description = "Allow CE SNAT'd traffic to reach app servers"
+  description = "Allow CE SLI traffic to reach app servers"
   priority    = 900
 
   target_tags = ["f5xc-app-server"]
@@ -111,8 +111,10 @@ resource "google_compute_firewall" "app_from_ce_snat" {
     ports    = [tostring(var.app_server_port)]
   }
 
-  # Only the CE SNAT pool prefix reaches the app — no direct client access
-  source_ranges = [var.snat_pool_prefix]
+  source_ranges = [
+    var.site1_inside_subnet_cidr,
+    var.site2_inside_subnet_cidr,
+  ]
 }
 
 # Allow app server health check responses back to CE SLI

@@ -47,7 +47,7 @@ resource "google_compute_instance" "client_vm" {
     apt-get install -y -q curl dnsutils netcat-openbsd
     echo "Client VM ready. NLB VIP: ${google_compute_forwarding_rule.ce_sli_nlb.ip_address}" \
       > /home/debian/README.txt
-    # Test: curl -v -H "Host: ${var.app_domain}" http://${google_compute_forwarding_rule.ce_sli_nlb.ip_address}/
+    # Test: curl -v http://<nlb_vip>/
   SCRIPT
 
   service_account {
