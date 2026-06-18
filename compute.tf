@@ -14,8 +14,9 @@
 # Image family: f5xc-customer-edge (project: f5-7626-networks-public)
 # ------------------------------------------------------------------------------
 data "google_compute_image" "f5xc_ce" {
-  project = "f5-7626-networks-public"
-  family  = "f5xc-customer-edge"
+  project     = "f5-7626-networks-public"
+  filter      = "name:f5xc-ce-crt-*"
+  most_recent = true
 }
 
 # ------------------------------------------------------------------------------
