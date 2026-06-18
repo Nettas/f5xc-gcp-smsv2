@@ -55,70 +55,45 @@ resource "volterra_securemesh_site_v2" "site1" {
   # ---- GCP not_managed (customer-managed infra) ----
   # Use `not_managed` because we provision the GCP VM ourselves via
   # google_compute_instance. Use `managed` only for F5XC-orchestrated infra.
-  gcp {
+gcp {
     not_managed {
       node_list {
-        gcp_az_name = var.gcp_az_site1
-        hostname    = "${var.site1_name}-node0"
+        hostname = "${var.site1_name}-node0"
 
+        # Interface 0 - SLO (Site Local Outside) - eth0
         interface_list {
-          # ------------------------------------------------------------------
-          # Interface 0 - SLO (Site Local Outside) - eth0
-          # Placed in the outside/SLO subnet. Must have internet access for
-          # tunnel registration to Regional Edges.
-          # ------------------------------------------------------------------
-          interfaces {
-            description = "SLO - Site Local Outside"
+          description      = "SLO - Site Local Outside"
+          dhcp_client      = true
+          mtu              = 1460
+          monitor_disabled = false
 
-            ethernet_interface {
-              device = "eth0"
-              mtu    = 1460 # GCP standard MTU
-
-              # DHCP client - GCP assigns IP automatically
-              dhcp_client {}
-
-              # Mark as outside/SLO interface
-              site_local_outside_network {}
-
-              is_primary        = true
-              monitor_disabled  = false
-            }
+          network_option {
+            site_local_network = true
           }
 
-          # ------------------------------------------------------------------
-          # Interface 1 - SLI (Site Local Inside) - eth1
-          # Placed in the inside/SLI subnet for workload connectivity.
-          # ------------------------------------------------------------------
-          interfaces {
-            description = "SLI - Site Local Inside"
+          ethernet_interface {
+            device = "eth0"
+          }
+        }
 
-            ethernet_interface {
-              device = "eth1"
-              mtu    = 1460
+        # Interface 1 - SLI (Site Local Inside) - eth1
+        interface_list {
+          description      = "SLI - Site Local Inside"
+          dhcp_client      = true
+          mtu              = 1460
+          monitor_disabled = false
 
-              # DHCP client - GCP assigns IP automatically
-              dhcp_client {}
+          network_option {
+            site_local_inside_network = true
+          }
 
-              # Mark as inside/SLI interface
-              site_local_inside_network {}
-
-              is_primary        = false
-              monitor_disabled  = false
-            }
+          ethernet_interface {
+            device = "eth1"
           }
         }
       }
     }
   }
-
-  # ---- Site type: 2-NIC = Ingress/Egress Gateway ----
-  multiple_interface {
-    # Enables the site to act as an Ingress/Egress Gateway (two-interface mode)
-    # SLO handles north-south; SLI handles east-west / workload traffic
-  }
-
-  # ---- Disable private connectivity (use public RE tunnels) ----
-  private_connectivity_disabled = true
 
   depends_on = [volterra_cloud_credentials.gcp]
 }
@@ -147,47 +122,42 @@ resource "volterra_securemesh_site_v2" "site2" {
   gcp {
     not_managed {
       node_list {
-        gcp_az_name = var.gcp_az_site2
-        hostname    = "${var.site2_name}-node0"
+        hostname = "${var.site2_name}-node0"
 
+        # Interface 0 - SLO (Site Local Outside) - eth0
         interface_list {
-          interfaces {
-            description = "SLO - Site Local Outside"
+          description      = "SLO - Site Local Outside"
+          dhcp_client      = true
+          mtu              = 1460
+          monitor_disabled = false
 
-            ethernet_interface {
-              device = "eth0"
-              mtu    = 1460
-
-              dhcp_client {}
-              site_local_outside_network {}
-
-              is_primary       = true
-              monitor_disabled = false
-            }
+          network_option {
+            site_local_network = true
           }
 
-          interfaces {
-            description = "SLI - Site Local Inside"
+          ethernet_interface {
+            device = "eth0"
+          }
+        }
 
-            ethernet_interface {
-              device = "eth1"
-              mtu    = 1460
+        # Interface 1 - SLI (Site Local Inside) - eth1
+        interface_list {
+          description      = "SLI - Site Local Inside"
+          dhcp_client      = true
+          mtu              = 1460
+          monitor_disabled = false
 
-              dhcp_client {}
-              site_local_inside_network {}
+          network_option {
+            site_local_inside_network = true
+          }
 
-              is_primary       = false
-              monitor_disabled = false
-            }
+          ethernet_interface {
+            device = "eth1"
           }
         }
       }
     }
   }
-
-  multiple_interface {}
-
-  private_connectivity_disabled = true
 
   depends_on = [volterra_cloud_credentials.gcp]
 }
